@@ -10,7 +10,7 @@ import { NextPage } from "next";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
-import { Toaster, toast } from "react-hot-toast";
+import { Toaster } from "react-hot-toast";
 import useSWR from "swr";
 
 export type ProductType = {

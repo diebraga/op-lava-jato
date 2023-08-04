@@ -1,6 +1,13 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import { stripe } from "../../lib/stripe";
 import { BookingType } from "@/app/page";
+import jwt from "jsonwebtoken";
+import prisma from "@/lib/prismaClient";
+
+function generateSingleUseToken(payload: object): string {
+  const token = jwt.sign({ ...payload }, process.env.JWT_SECRET as string);
+  return token;
+}
 
 const checkout = async (req: NextApiRequest, res: NextApiResponse) => {
   try {
@@ -14,7 +21,7 @@ const checkout = async (req: NextApiRequest, res: NextApiResponse) => {
       selectedTime,
       selectedProductNane,
       selectedYear,
-      rawPrice
+      rawPrice,
     } = booking;
 
     if (req.method !== "POST") {
@@ -29,7 +36,19 @@ const checkout = async (req: NextApiRequest, res: NextApiResponse) => {
       });
     }
 
-    const success_url = `${process.env.APP_URL}/success?session_id={CHECKOUT_SESSION_ID}&day=${selectedDate}&price=${rawPrice}&year=${selectedYear}&day_week=${selectedDayOfWeek}&month=${selectedMonth}&time=${selectedTime}&service=${selectedProductNane}`;
+    const tokenPayload = await prisma.tokens.create({
+      data: {
+        createdAt: new Date(),
+        invalid: false,
+      },
+    });
+    console.log(tokenPayload);
+
+    const success_url = `${
+      process.env.APP_URL
+    }/success?session_id={CHECKOUT_SESSION_ID}&day=${selectedDate}&price=${rawPrice}&year=${selectedYear}&day_week=${selectedDayOfWeek}&month=${selectedMonth}&time=${selectedTime}&service=${selectedProductNane}&token=${generateSingleUseToken(
+      tokenPayload
+    )}`;
     const cancel_url = `${process.env.APP_URL}/`;
 
     const checkoutSession = await stripe.checkout.sessions.create({

@@ -4,6 +4,7 @@ import Button from "@/components/Button/Button";
 import { stripe } from "@/lib/stripe";
 import prisma from "@/lib/prismaClient";
 import { redirect } from "next/navigation";
+import jwt from "jsonwebtoken";
 
 type SuccessProps = {
   searchParams: {
@@ -17,12 +18,37 @@ type SuccessProps = {
     year: string;
     userNumber: string;
     price: string;
+    token: string;
   };
 };
 
+// Function to validate the single-use JWT
+function validateSingleUseToken(
+  token: string
+): { createdAt: Date; id: string } | null {
+  try {
+    const decodedToken = jwt.verify(
+      token,
+      process.env.JWT_SECRET as string
+    ) as { [key: string]: any };
+    return { createdAt: decodedToken.createdAt, id: decodedToken.id };
+  } catch (err) {
+    return null;
+  }
+}
+
 const Success: NextPage<SuccessProps> = async ({ searchParams }) => {
-  const { day, day_week, month, service, session_id, time, year, price } =
-    searchParams;
+  const {
+    day,
+    day_week,
+    month,
+    service,
+    session_id,
+    time,
+    year,
+    price,
+    token,
+  } = searchParams;
 
   if (
     !day ||
@@ -37,82 +63,98 @@ const Success: NextPage<SuccessProps> = async ({ searchParams }) => {
     redirect(`${process.env.APP_URL}/?error=Fields not provided`);
   }
 
-  try {
-    const session = await stripe.checkout.sessions.retrieve(session_id);
+  const findToken = await prisma.tokens.findFirst({
+    where: {
+      id: validateSingleUseToken(token)?.id,
+    },
+  });
 
-    const userExists = await prisma.clientes.findFirst({
-      where: {
-        telefone: session.customer_details?.phone as string,
-      },
-    });
-
-    // If user does not exists create one
-    if (!userExists) {
-      await prisma.clientes.create({
-        data: {
-          telefone: session.customer_details?.phone as string,
-          email: session.customer_details?.email as string,
-          nome: session.customer_details?.name as string,
-          v: 0,
-        },
-      });
-    }
-
-    // If user exists but he does not have an email add email to it
-    if (userExists && !userExists.email) {
-      const updatedUser = await prisma.clientes.update({
+  if (findToken?.invalid) {
+    redirect(`${process.env.APP_URL}`);
+  } else {
+    try {
+      await prisma.tokens.update({
         where: {
-          id: userExists.id,
+          id: validateSingleUseToken(token)?.id,
         },
-        data: {
-          email: session.customer_details?.email as string,
+        data: { invalid: true },
+      });
+      const session = await stripe.checkout.sessions.retrieve(session_id);
+
+      const userExists = await prisma.clientes.findFirst({
+        where: {
+          telefone: session.customer_details?.phone as string,
         },
       });
 
-      const bookingCreated = await prisma.booking.create({
-        data: {
-          selectedDate: Number(day),
-          selectedDayOfWeek: day_week,
-          selectedMonth: month,
-          selectedTime: time,
-          selectedYear: Number(year),
-          selectedProductDefaultPrice: Number(price),
-          cliente: {
-            connect: {
-              telefone: session.customer_details?.phone as string,
+      // If user does not exists create one
+      if (!userExists) {
+        await prisma.clientes.create({
+          data: {
+            telefone: session.customer_details?.phone as string,
+            email: session.customer_details?.email as string,
+            nome: session.customer_details?.name as string,
+            v: 0,
+          },
+        });
+      }
+
+      // If user exists but he does not have an email add email to it
+      if (userExists && !userExists.email) {
+        const updatedUser = await prisma.clientes.update({
+          where: {
+            id: userExists.id,
+          },
+          data: {
+            email: session.customer_details?.email as string,
+          },
+        });
+
+        const bookingCreated = await prisma.booking.create({
+          data: {
+            selectedDate: Number(day),
+            selectedDayOfWeek: day_week,
+            selectedMonth: month,
+            selectedTime: time,
+            selectedYear: Number(year),
+            selectedProductDefaultPrice: Number(price),
+            cliente: {
+              connect: {
+                telefone: session.customer_details?.phone as string,
+              },
             },
           },
-        },
-      });
+        });
 
-      if (bookingCreated) {
-        console.log("Send email to " + updatedUser.email);
+        if (bookingCreated) {
+          console.log("Send email to " + updatedUser.email);
+        }
       }
-    }
 
-    if (userExists && userExists.email) {
-      const bookingCreated = await prisma.booking.create({
-        data: {
-          selectedDate: Number(day),
-          selectedDayOfWeek: day_week,
-          selectedMonth: month,
-          selectedTime: time,
-          selectedYear: Number(year),
-          selectedProductDefaultPrice: Number(price),
-          cliente: {
-            connect: {
-              telefone: session.customer_details?.phone as string,
+      if (userExists && userExists.email) {
+        const bookingCreated = await prisma.booking.create({
+          data: {
+            selectedDate: Number(day),
+            selectedDayOfWeek: day_week,
+            selectedMonth: month,
+            selectedTime: time,
+            selectedYear: Number(year),
+            selectedProductDefaultPrice: Number(price),
+            cliente: {
+              connect: {
+                telefone: session.customer_details?.phone as string,
+              },
             },
           },
-        },
-      });
+        });
 
-      if (bookingCreated) {
-        console.log("Send email to " + userExists.email);
+        if (bookingCreated) {
+          console.log("Send email to " + userExists.email);
+        }
       }
+    } catch (error: any) {
+      redirect(`${process.env.APP_URL}/?error=${error.message}`);
     }
-  } catch (error: any) {
-    redirect(`${process.env.APP_URL}/?error=${error.message}`);
   }
 
   return (

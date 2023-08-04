@@ -4,7 +4,6 @@ import Button from "@/components/Button/Button";
 import { stripe } from "@/lib/stripe";
 import prisma from "@/lib/prismaClient";
 import { redirect } from "next/navigation";
-import emailjs from "@emailjs/browser";
 
 type SuccessProps = {
   searchParams: {

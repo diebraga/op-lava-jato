@@ -47,7 +47,6 @@ const BookingPage: NextPage = () => {
     "booking_step",
     bookingDataInitialState as BookingType
   );
-  console.log(bookingData);
 
   const [checkoutIsLoading, setIsCheckoutLoading] = useState<boolean>(false);
   const dates = useGetTime();
